@@ -14,18 +14,14 @@ import altair as alt
 import tensorflow as tf
 from tensorflow.keras import layers
 
-# ============================
 # Page config
-# ============================
 st.set_page_config(
     page_title="Waste Classifier (O vs R)",
     page_icon="♻️",
     layout="centered",
 )
 
-# ============================
-# A. Theme & Palette
-# ============================
+# Theme & Palette
 ACCENT_O = "#10b981"   # Organic (green)
 ACCENT_R = "#f59e0b"   # Recycle (amber)
 
@@ -108,16 +104,12 @@ st.markdown(
 st.title("♻️ Waste Classifier — Organic vs Recycle")
 st.caption("Unggah gambar **atau** ambil foto dari **kamera** (mobile) → Sistem memprediksi **O**/**R** disertai probabilitas.")
 
-# ============================
-# B. Paths & constants
-# ============================
+# Paths & constants
 MODEL_PATH = os.getenv("MODEL_PATH", "waste_classifier_model.keras")
 LABELS_PATH = os.getenv("LABELS_PATH", "labels.json")
 IMG_SIZE: Tuple[int, int] = (224, 224)
 
-# ==========================================
-# C. Custom Layer (ECALayer) untuk load_model
-# ==========================================
+# C. Custom Layer (ECALayer)
 try:
     from keras.saving import register_keras_serializable  # Keras 3
 except Exception:
@@ -155,9 +147,7 @@ class ECALayer(layers.Layer):
         cfg.update({"gamma": self.gamma, "b": self.b})
         return cfg
 
-# ============================
-# D. Utilities
-# ============================
+# Utilities
 def _supports_kw(func, name: str) -> bool:
     try:
         return name in inspect.signature(func).parameters
@@ -165,7 +155,6 @@ def _supports_kw(func, name: str) -> bool:
         return False
 
 def show_image_stretch(img, **kwargs):
-    """Compat: gunakan width='stretch' jika didukung; kalau tidak, fallback ke use_container_width=True."""
     try:
         if _supports_kw(st.image, "width"):
             st.image(img, width="stretch", **kwargs)
@@ -175,7 +164,6 @@ def show_image_stretch(img, **kwargs):
         st.image(img, use_container_width=True, **kwargs)
 
 def show_altair_chart_stretch(chart):
-    """Compat: gunakan width='stretch' jika didukung; kalau tidak, fallback ke use_container_width=True."""
     try:
         if _supports_kw(st.altair_chart, "width"):
             st.altair_chart(chart, width="stretch")
@@ -219,9 +207,8 @@ def _fix_exif(im: Image.Image) -> Image.Image:
     except Exception:
         return im
 
-# --- DETEKSI RESCALING DI DALAM MODEL (untuk cegah double-normalization)
+# --- DETEKSI RESCALING DI DALAM MODEL
 def _detect_internal_rescaling(m: tf.keras.Model) -> bool:
-    """Return True jika model mengandung tf.keras.layers.Rescaling(1./255) di jalur awal."""
     try:
         for lyr in m.layers:
             if isinstance(lyr, tf.keras.layers.InputLayer):
@@ -234,14 +221,14 @@ def _detect_internal_rescaling(m: tf.keras.Model) -> bool:
                 return True
         return False
     except Exception:
-        # jika gagal deteksi, default False (biar masih ada /255 di app)
+        # jika gagal deteksi, default False
         return False
 
 # Placeholder; akan di-set setelah model diload
 HAS_INTERNAL_RESCALE = False
 
 def preprocess(im: Image.Image, size: Tuple[int, int] = (224, 224)) -> np.ndarray:
-    """Resize + (opsional) scaling /255 jika model TIDAK punya Rescaling internal."""
+    """Resize + (opsional) scaling /255"""
     im = _fix_exif(im).convert("RGB").resize(size)
     x = np.asarray(im, dtype=np.float32)
     if not HAS_INTERNAL_RESCALE:
@@ -253,7 +240,7 @@ def predict_one(model, x: np.ndarray) -> np.ndarray:
     return prob
 
 def prob_chart(data, width=460, height=340):
-    """Altair v5-safe layering: konfigurasi diletakkan di objek layer, bukan chart anak."""
+    """Altair v5-safe layering"""
     domain = ["O", "R"]
     colors = [ACCENT_O, ACCENT_R]
     base_data = alt.Data(values=data)
@@ -286,9 +273,7 @@ def show_error_box(err: Exception):
     with st.expander("Rincian error (untuk debugging)"):
         st.code("".join(traceback.format_exception(err)), language="python")
 
-# ============================
-# E. Sidebar: Pengaturan model
-# ============================
+# Sidebar: Pengaturan model
 with st.sidebar:
     st.header("Pengaturan")
     thr = st.slider("Decision threshold untuk **R** (Recycle)", 0.0, 1.0, 0.50, 0.01)
@@ -297,9 +282,7 @@ with st.sidebar:
     st.markdown('<div class="hr-soft"></div>', unsafe_allow_html=True)
     st.caption("Tips kamera: kamera hanya aktif saat kamu klik *Aktifkan kamera*.")
 
-# ============================
-# F. Load resources
-# ============================
+# Load resources
 with st.spinner("Memuat model..."):
     try:
         (model, n_params) = load_model(MODEL_PATH)
@@ -318,9 +301,7 @@ CLASS2IDX = {k: int(v) for k, v in labels["class_to_idx"].items()}
 if set(IDX2CLASS.values()) != {"O", "R"}:
     st.warning("Labels tidak persis {'O','R'}. Menggunakan mapping dari 'labels.json'. Pastikan urutan output model sesuai.")
 
-# ============================
-# G. INPUT (single-column)
-# ============================
+# INPUT (single-column)
 st.markdown('<div class="wc-card">', unsafe_allow_html=True)
 st.markdown('<div class="section-title">1) Input Gambar</div>', unsafe_allow_html=True)
 
@@ -359,9 +340,7 @@ else:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ============================
-# H. HASIL PREDIKSI (di bawah input)
-# ============================
+# HASIL PREDIKSI (di bawah input)
 st.markdown('<div class="wc-card">', unsafe_allow_html=True)
 st.markdown('<div class="section-title">2) Hasil Prediksi</div>', unsafe_allow_html=True)
 st.caption("Prediksi & probabilitas akan muncul setelah gambar dipilih/dipotret.")
@@ -424,9 +403,7 @@ else:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ============================
-# I. Footer
-# ============================
+# Footer
 with st.expander("ℹ️ Tentang & Catatan Teknis"):
     st.markdown(
         f"""
