@@ -2,6 +2,7 @@
 # Waste Classification (Organic vs Recycle) — Streamlit Inference
 # UI: single-column (hasil di bawah input), kamera hanya aktif saat diminta,
 # threshold kelas R, grafik Altair, tema gelap/terang, kompatibel versi Streamlit lama/baru.
+# Perbaikan: Deteksi otomatis Rescaling(1./255) di dalam model untuk mencegah double-normalization.
 
 import os, json, traceback, inspect
 from typing import Tuple, Dict, Any, Optional
@@ -218,9 +219,33 @@ def _fix_exif(im: Image.Image) -> Image.Image:
     except Exception:
         return im
 
+# --- DETEKSI RESCALING DI DALAM MODEL (untuk cegah double-normalization)
+def _detect_internal_rescaling(m: tf.keras.Model) -> bool:
+    """Return True jika model mengandung tf.keras.layers.Rescaling(1./255) di jalur awal."""
+    try:
+        for lyr in m.layers:
+            if isinstance(lyr, tf.keras.layers.InputLayer):
+                continue
+            # nested model
+            if isinstance(lyr, tf.keras.Model):
+                if _detect_internal_rescaling(lyr):
+                    return True
+            if isinstance(lyr, tf.keras.layers.Rescaling):
+                return True
+        return False
+    except Exception:
+        # jika gagal deteksi, default False (biar masih ada /255 di app)
+        return False
+
+# Placeholder; akan di-set setelah model diload
+HAS_INTERNAL_RESCALE = False
+
 def preprocess(im: Image.Image, size: Tuple[int, int] = (224, 224)) -> np.ndarray:
+    """Resize + (opsional) scaling /255 jika model TIDAK punya Rescaling internal."""
     im = _fix_exif(im).convert("RGB").resize(size)
-    x = np.asarray(im, dtype=np.float32) / 255.0
+    x = np.asarray(im, dtype=np.float32)
+    if not HAS_INTERNAL_RESCALE:
+        x = x / 255.0
     return x[None, ...]  # (1,H,W,3)
 
 def predict_one(model, x: np.ndarray) -> np.ndarray:
@@ -282,6 +307,9 @@ with st.spinner("Memuat model..."):
         st.error(str(e))
         show_error_box(e)
         st.stop()
+
+# Deteksi apakah model sudah punya Rescaling internal
+HAS_INTERNAL_RESCALE = _detect_internal_rescaling(model)
 
 labels = load_labels(LABELS_PATH)
 IDX2CLASS = labels["idx_to_class"]
@@ -385,6 +413,7 @@ if selected_image is not None:
                     "p(R)": round(p_R, 4),
                     "threshold_R": round(thr, 2),
                     "keputusan": pred,
+                    "has_internal_rescaling": HAS_INTERNAL_RESCALE,
                 }
             )
     except Exception as e:
@@ -401,10 +430,11 @@ st.markdown('</div>', unsafe_allow_html=True)
 with st.expander("ℹ️ Tentang & Catatan Teknis"):
     st.markdown(
         f"""
-        - **Model**: Keras (`.keras`) kustom dengan blok Depthwise-Separable + ECA, input 224×224 RGB, normalisasi /255.
+        - **Model**: Keras (`.keras`) kustom dengan blok Depthwise-Separable + ECA.
+        - **Preprocessing**: Deteksi otomatis **Rescaling(1./255)** di dalam model → app menyesuaikan agar tidak double-normalization.
         - **Labels**: `labels.json` dengan `idx_to_class` & `class_to_idx`. Default fallback `{{0:'O', 1:'R'}}`.
         - **Parameter**: ~{('{:,}'.format(n_params)) if n_params else '—'} trainable params.
-        - **Keputusan**: threshold pada kelas **R** (Recycle) agar mudah dikalibrasi sesuai kebutuhan lapangan.
+        - **Keputusan**: threshold pada kelas **R** (Recycle) agar mudah dikalibrasi.
         - **Perangkat**: Kamera hanya aktif saat tombol **Aktifkan kamera** ditekan.
         """
     )
